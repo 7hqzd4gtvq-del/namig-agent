@@ -1,0 +1,50 @@
+name: Sync Upstream (Hermes)
+
+on:
+  schedule:
+    # Понедельник 06:00 МСК = 03:00 UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Add upstream
+        run: git remote add upstream https://github.com/NousResearch/hermes-agent.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Merge upstream
+        id: merge
+        run: |
+          git config user.name "NaMig Bot"
+          git config user.email "bot@namig.store"
+          if git merge upstream/main --no-edit; then
+            echo "conflict=false" >> $GITHUB_OUTPUT
+            git push origin main
+            echo "✅ Синхронизация успешна"
+          else
+            echo "conflict=true" >> $GITHUB_OUTPUT
+            git merge --abort
+            echo "⚠️ Конфликт слияния с upstream"
+          fi
+
+      - name: Create issue on conflict
+        if: steps.merge.outputs.conflict == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🔴 Конфликт с upstream (Hermes)',
+              body: 'Слияние с upstream/hermes-agent вызвало конфликт. Нужно ручное разрешение.\n\n`git fetch upstream && git merge upstream/main`',
+              labels: ['conflict', 'upstream']
+            })
